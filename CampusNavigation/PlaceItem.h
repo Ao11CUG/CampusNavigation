@@ -9,7 +9,7 @@
 #include "Place.h"
 
 class PlaceItem : public QGraphicsEllipseItem {
-    Q_OBJECT // 必须添加此宏以使用信号和槽机制
+    //Q_OBJECT // 必须包含此宏以启用 Qt 信号/槽机制
 
 public:
     enum ItemMode {
