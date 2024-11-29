@@ -5,6 +5,7 @@
 #include "Graph.h"
 #include "qstringlistmodel.h"
 #include "PlaceItem.h"
+#include "Path.h"
 
 class CampusNavigation : public QMainWindow
 {
@@ -16,6 +17,7 @@ public:
 
 public slots:
     void on_addPlaceButton_clicked();
+    void on_addPathButton_clicked();
     void on_shortestPathButton_clicked(); // 计算最短路径的按钮
 
 private:
@@ -28,7 +30,8 @@ private:
     QGraphicsView* view;       // 用于显示场景的视图
 
     void drawCampusMap();
-    void drawPath(const std::vector<Place>& path);
+    void drawPath(const Path& path);
+    void highlightPath(const Path& path);
 
     void calculateShortestPath(int startId, int endId); // 计算并显示路径
 

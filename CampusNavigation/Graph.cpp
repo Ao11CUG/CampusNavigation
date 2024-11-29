@@ -5,16 +5,20 @@ void Graph::addPlace(const Place& place) {
     places[place.id] = place; // 使用编号作为键存储场所
 }
 
-void Graph::addPath(int fromId, int toId, double distance) {
-    adjacencyList[fromId][toId] = distance; // 添加路径
-    adjacencyList[toId][fromId] = distance; // 无向图，添加反向路径
+void Graph::addPath(const Path& path) {
+    adjacencyList[path.startPlace.id][path.endPlace.id] = path.distance; // 添加路径
+    adjacencyList[path.endPlace.id][path.startPlace.id] = path.distance; // 无向图，添加反向路径
 }
 
 std::unordered_map<int, Place> Graph::getPlaces() {
     return places; // 返回所有场所
 }
 
-std::vector<Place> Graph::findShortestPath(int startId, int endId) {
+std::unordered_map<int, Path> Graph::getPaths() {
+    return paths; // 返回所有场所
+}
+
+Path Graph::findShortestPath(int startId, int endId) {
     // Dijkstra 算法
     std::unordered_map<int, double> distances; // 存储从起点到各点的距离
     std::unordered_map<int, int> previous; // 记录经过的路径
@@ -45,22 +49,28 @@ std::vector<Place> Graph::findShortestPath(int startId, int endId) {
             double newDistance = currentDistance + edgeWeight; // 计算新距离
             if (newDistance < distances[neighborId]) {
                 distances[neighborId] = newDistance; // 更新距离
-                previous[neighborId] = currentId; // 更新路径
+                previous[neighborId] = currentId; // 更新 PATH
                 minHeap.push({ newDistance, neighborId }); // 添加到优先队列
             }
         }
     }
 
     // 回溯路径
-    std::vector<Place> path;
+    if (previous.find(endId) == previous.end()) {
+        return Path(places[startId], places[endId], std::numeric_limits<double>::infinity()); // 返回无效路径
+    }
+
+    std::vector<Place> pathPlaces;
     for (int at = endId; at != startId; at = previous[at]) {
-        path.push_back(places[at]);
+        pathPlaces.push_back(places[at]);
         if (previous.find(at) == previous.end()) {
-            return {}; // 如果没有路径，返回空
+            return Path(places[startId], places[endId], std::numeric_limits<double>::infinity()); // 如果没有路径，返回无效路径
         }
     }
-    path.push_back(places[startId]); // 添加起点
-    std::reverse(path.begin(), path.end()); // 反转路径顺序
+    pathPlaces.push_back(places[startId]); // 添加起点
+    std::reverse(pathPlaces.begin(), pathPlaces.end()); // 反转路径顺序
 
-    return path; // 返回最短路径
+    // 创建并返回 Path 对象
+    return Path(pathPlaces.front(), pathPlaces.back(), distances[endId]);
 }
+

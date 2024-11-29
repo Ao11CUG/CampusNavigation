@@ -7,18 +7,20 @@
 #include <QMessageBox>
 #include <QDebug>
 #include "Place.h"
+#include "Path.h"
+#include <functional>
 
 class PlaceItem : public QGraphicsEllipseItem {
-    //Q_OBJECT // 必须包含此宏以启用 Qt 信号/槽机制
-
 public:
+    using PathSelectionCallback = std::function<void(int, int)>; // 定义回调类型
+
     enum ItemMode {
         PathSelection,
         ViewProperties
     };
 
-    PlaceItem(const Place& place, QGraphicsItem* parent = nullptr)
-        : QGraphicsEllipseItem(parent), placeInfo(place) {
+    PlaceItem(const Place& place,  PathSelectionCallback pathCallback, QGraphicsItem* parent = nullptr)
+        : QGraphicsEllipseItem(parent), placeInfo(place), pathCallback(pathCallback)  {
         setRect(place.coordinates.first, place.coordinates.second, 10, 10);
         setBrush(QBrush(Qt::blue));
         setFlag(QGraphicsItem::ItemIsSelectable);
@@ -26,15 +28,13 @@ public:
     }
 
     Place placeInfo; // 存储场所信息
+    PathSelectionCallback pathCallback; // 存储路径选择回调
 
     static ItemMode currentMode; // 当前模式
     static int startPlaceId;      // 起始点 ID
     static int endPlaceId;        // 终点 ID
     static bool selectingStart;    // 是否正在选择起始点
     static bool selectingEnd;      // 是否正在选择终点
-
-//signals:
-    //void placesSelected(int startId, int endId); // 声明选择起始和终点的信号
 
 protected:
     void mousePressEvent(QGraphicsSceneMouseEvent* event) override {
@@ -52,9 +52,10 @@ protected:
                     endPlaceId = placeInfo.id; // 记录终点 ID
                     QMessageBox::information(nullptr, QStringLiteral("选择终点场所"),
                         QStringLiteral("终点场所 ID: %1").arg(endPlaceId));
-
-                    // 发出信号表示选择完成
-                    //emit placesSelected(startPlaceId, endPlaceId);
+                    // 调用路径计算回调
+                    if (pathCallback) {
+                        pathCallback(startPlaceId, endPlaceId);
+                    }
                     resetSelection();
                 }
             }

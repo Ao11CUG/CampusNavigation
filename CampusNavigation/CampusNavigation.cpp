@@ -4,6 +4,7 @@
 #include <QLabel>
 #include <qdialog.h>
 #include <qlineedit.h>
+#include <qcombobox.h>
 #include <qmessagebox.h>
 #include "qgraphicsscene.h"
 #include "qgraphicsview.h"
@@ -86,6 +87,60 @@ void CampusNavigation::on_addPlaceButton_clicked() {
     dialog.exec();
 }
 
+void CampusNavigation::on_addPathButton_clicked() {
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("添加路径"));
+
+    QVBoxLayout* layout = new QVBoxLayout(&dialog);
+
+    QComboBox* startBox = new QComboBox(&dialog);
+    QComboBox* endBox = new QComboBox(&dialog);
+    QLineEdit* distanceInput = new QLineEdit(&dialog);
+
+    // 填充 combobox 的选项
+    const auto& places = campusMap.getPlaces(); // 获取已有的场所
+    for (const auto& pair : places) {
+        const Place& place = pair.second; // 获取场所信息
+        startBox->addItem(place.name, QVariant(place.id)); // 使用场所名称作为显示文本，用 ID 作为数据
+        endBox->addItem(place.name, QVariant(place.id));   // 同样为终点 combobox 填充
+    }
+
+    layout->addWidget(new QLabel(QStringLiteral("选择起点：")));
+    layout->addWidget(startBox);
+    layout->addWidget(new QLabel(QStringLiteral("选择终点：")));
+    layout->addWidget(endBox);
+    layout->addWidget(new QLabel(QStringLiteral("距离权重："), &dialog));
+    layout->addWidget(distanceInput);
+
+    QPushButton* addButton = new QPushButton(QStringLiteral("添加"), &dialog);
+    layout->addWidget(addButton);
+
+    connect(addButton, &QPushButton::clicked, [&dialog, this, startBox, endBox, distanceInput]() {
+        bool ok;
+        double distance = distanceInput->text().toDouble(&ok); // 获取距离权重
+        if (ok && distance > 0) {
+            int startId = startBox->currentData().toInt(); // 获取选中起点的 ID
+            int endId = endBox->currentData().toInt(); // 获取选中终点的 ID
+
+            // 根据起点和终点创建路径
+            Place startPlace = campusMap.getPlaces().at(startId);
+            Place endPlace = campusMap.getPlaces().at(endId);
+            Path newPath{ startPlace, endPlace, distance }; // 创建新的路径
+            drawPath(newPath);
+
+            campusMap.addPath(newPath); // 将路径添加到地图中
+            drawCampusMap(); // 绘制更新后的校园地图
+
+            dialog.accept(); // 关闭对话框
+        }
+        else {
+            QMessageBox::warning(&dialog, QStringLiteral("错误"), QStringLiteral("请填写有效的距离。"));
+        }
+        });
+
+    dialog.exec();
+}
+
 void CampusNavigation::on_shortestPathButton_clicked() {
     PlaceItem::startPlaceId = -1; // Reset starting point ID
     PlaceItem::endPlaceId = -1;   // Reset ending point ID
@@ -118,12 +173,18 @@ void CampusNavigation::drawCampusMap() {
         }
 
         if (!exists) {
-            PlaceItem* placeItem = new PlaceItem(place);
-
-            // 连接信号与槽
-            //connect(placeItem, &PlaceItem::placesSelected, this, &CampusNavigation::calculateShortestPath);
+            // 创建 PlaceItem，并传递回调函数
+            PlaceItem* placeItem = new PlaceItem(place,
+                [this](int startId, int endId) {
+                    this->calculateShortestPath(startId, endId); // 调用计算最短路径
+                });
 
             scene->addItem(placeItem);
+
+            // 创建并设置 QGraphicsTextItem 来显示场所名称
+            QGraphicsTextItem* textItem = new QGraphicsTextItem(place.name); // 使用场所名称
+            textItem->setPos(place.coordinates.first + 15, place.coordinates.second); 
+            scene->addItem(textItem);
         }
     }
 }
@@ -136,48 +197,35 @@ void CampusNavigation::calculateShortestPath(int startId, int endId) {
     }
 
     // 使用图类的最短路径算法计算路径
-    auto path = campusMap.findShortestPath(startId, endId);
+    Path path = campusMap.findShortestPath(startId, endId);
 
-    // 显示结果
-    if (path.empty()) {
-        QMessageBox::information(this, QStringLiteral("路径结果"), QStringLiteral("无法找到从起始地点到终点的路径。"));
-    }
-    else {
-        QString pathResult = QStringLiteral("最短路径: ");
-        for (const auto& place : path) {
-            pathResult += QString::number(place.id) + " -> ";
-        }
-        pathResult.chop(4); // 移除最后的 " -> "
-        QMessageBox::information(this, QStringLiteral("路径结果"), pathResult);
-    }
+    QString pathResult = QStringLiteral("最短路径: ");
+    pathResult += QString(path.startPlace.name) + " -> " + QString(path.endPlace.name);
+
+    highlightPath(path);
+        
+    QMessageBox::information(this, QStringLiteral("路径结果"), pathResult);
 
     // 恢复模式为查看属性
     PlaceItem::currentMode = PlaceItem::ViewProperties; // 恢复为查看属性模式
-
-    // 绘制路径
-    drawPath(path);
 }
 
-void CampusNavigation::drawPath(const std::vector<Place>& path) {
-    // 清空之前的路径
-    for (auto item : scene->items()) {
-        if (auto lineItem = dynamic_cast<QGraphicsLineItem*>(item)) {
-            scene->removeItem(lineItem);
-            delete lineItem; // 删除路径
-        }
-    }
-
-    // 将路径绘制为线条
-    for (size_t i = 0; i < path.size() - 1; ++i) {
-        const Place& startPlace = path[i];
-        const Place& endPlace = path[i + 1];
-
+void CampusNavigation::drawPath(const Path& path) {
         // 创建线段
-        QGraphicsLineItem* lineItem = new QGraphicsLineItem(startPlace.coordinates.first,
-            startPlace.coordinates.second,
-            endPlace.coordinates.first,
-            endPlace.coordinates.second);
-        lineItem->setPen(QPen(Qt::red, 2)); // 设置线条颜色和宽度
+        QGraphicsLineItem* lineItem = new QGraphicsLineItem(path.startPlace.coordinates.first + 5,
+            path.startPlace.coordinates.second + 5,
+            path.endPlace.coordinates.first + 5,
+            path.endPlace.coordinates.second + 5);
+        lineItem->setPen(QPen(Qt::green, 2)); // 设置线条颜色和宽度
         scene->addItem(lineItem); // 添加到场景中
-    }
+}
+
+void CampusNavigation::highlightPath(const Path& path) {
+    // 创建线段
+    QGraphicsLineItem* lineItem = new QGraphicsLineItem(path.startPlace.coordinates.first + 5,
+        path.startPlace.coordinates.second + 5,
+        path.endPlace.coordinates.first + 5,
+        path.endPlace.coordinates.second + 5);
+    lineItem->setPen(QPen(Qt::red, 2)); // 设置线条颜色和宽度
+    scene->addItem(lineItem); // 添加到场景中
 }
